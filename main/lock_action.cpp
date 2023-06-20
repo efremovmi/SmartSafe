@@ -1,3 +1,13 @@
+// ------------------------ УПРАВЛЕНИЕ ЗАМКОМ --------------------
+/* 
+  API для управления замка.
+  Поддерживается три действия: 
+  - открыть замок
+  - закрыть замок
+  
+  Прерывание нужно, чтобы немного распараллелить системы (одновременны открыть, зажечь светодиод и проиграть мелодию) 
+*/
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <Arduino.h>
@@ -5,6 +15,7 @@
 #include "lock_action.h"
 #include "variables.h"
 
+//  lock - открыть замок
 void lock(){
   cli(); // Отключение прерываний
   digitalWrite(LOCK_PIN, HIGH);
@@ -25,8 +36,8 @@ void lock(){
   sei(); // Включение прерываний
 }
 
-
-void set_lock(){
+// unlock - закрыть замок
+void unlock(){
   cli(); // Отключение прерываний
   digitalWrite(LOCK_PIN, LOW);
   Serial.println(F("Start"));
@@ -46,10 +57,10 @@ void set_lock(){
   sei(); // Включение прерываний
 }
 
+// обработчик прерывания по сравнению таймера 1
 ISR(TIMER1_COMPA_vect)
 {
   cli();
-  // Serial.println(F("Stop"));
   digitalWrite(LOCK_PIN, LOW);
   TCCR1A = 0;
   TCCR1B = 0;
@@ -57,3 +68,4 @@ ISR(TIMER1_COMPA_vect)
   TCNT1 = 0;
   OCR1A = 0;
 }
+// ------------------------ УПРАВЛЕНИЕ ЗАМКОМ --------------------

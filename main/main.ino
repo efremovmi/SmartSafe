@@ -1,4 +1,13 @@
-#define _LCD_TYPE 1
+/* 
+  Электронный замок для сейфа с возможностью многофакторной аутентификации
+
+  Общее описание:
+
+  Возможности устройства:
+  - Поддержка различных режимов аутентификации (отпечаток, pin, привязка к HOTP клиенту)
+  - Добавление/удаление пользователей
+  - Добавление/удаление своих данных
+*/
 #include <LCD_1602_RUS_ALL.h>
 
 #include <Keypad.h>
@@ -15,7 +24,9 @@
 #include "sha1.h"
 
 
-// ==========================================================================================================================================================
+// ------------------------ НАСТРОЙКИ ----------------------------
+#define _LCD_TYPE 1
+
 // Экзепляры классов
 
 // Создание экземляра экземляра класса клавиатуры
@@ -25,10 +36,9 @@ Keypad mainKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS);
 LCD_1602_RUS lcd(0x27, 16, 2);
 
 // Создание экземляра класса FINGERPRINT для общения с датчиком отпечатка пальца
-// объявляем объект finger   для работы с библиотекой Adafruit_Fingerprint ИМЯ_ОБЪЕКТА = Adafruit_Fingerprint(ПАРАМЕТР); // ПАРАМЕТР - rx_pin и tx_pin для работы с UART к которому подключен модуль
+// объявляем объект finger   для работы с библиотекой Adafruit_Fingerprint ИМЯ_ОБЪЕКТА = Adafruit_Fingerprint(ПАРАМЕТР); 
+// ПАРАМЕТР - rx_pin и tx_pin для работы с UART к которому подключен модуль
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(RX_FINGERPRINT, TX_FINGERPRINT);   
-
-// ==========================================================================================================================================================
 
 // Cтруктура данных пользователя
 struct User {
@@ -37,13 +47,15 @@ struct User {
   bool isExists;
 };
 
+// Позиция, где хранятся пользователи
 #define MODE_POS sizeof(User)*MAX_USER_COUNT+2
 
-// ==========================================================================================================================================================
 // Флаг для проверка того, зашел ли кто-то в систему
 bool isAccessAllowed = false;
+// ------------------------ НАСТРОЙКИ ----------------------------
 
-// ==========================================================================================================================================================
+
+// ------------------------ ИНИЦИАЛИЗАЦИЯ ------------------------
 // Первоначальная настройка
 void setup() {
   randomSeed(analogRead(A1));
@@ -68,10 +80,10 @@ void setup() {
   // Датчик отпечатка пальцев 
   finger.begin(57600);
   finger.LEDcontrol(false);
+  
   // Для отладки
   Serial.begin(9600);
 
- 
   // Проверка, что датчик работает
   if(finger.verifyPassword()){
     Serial.println(F("Found sensor"));
@@ -88,19 +100,17 @@ void setup() {
   // SaveUser(4, User{"", "", false});
   // SaveCurrentMode(PIN_MODE);
   // finger.emptyDatabase();
-
-
-  // digitalWrite(LOCK_PIN, HIGH);
-  // delay(100);
   
   // Вывести форму входа
   DrawMainForm();
 
   // Конфигурация замка
-  set_lock();
+  unlock();
 }
+// ------------------------ ИНИЦИАЛИЗАЦИЯ ------------------------
 
 
+// ------------------------ ОСНОВНОЙ ЦИКЛ ------------------------
 void loop() {
   char inputChar = mainKeypad.getKey();
 
@@ -171,13 +181,6 @@ void loop() {
           DrawMenu();
         }
         break;
-      // case UP_BUTTON:
-      //   SaveFingerprint(1);
-      //   break;
-      case DOWN_BUTTON:
-        lock();
-        isAccessAllowed = false;
-        break;
       case EXIT_BUTTON:
         isAccessAllowed = false;
         DrawMainForm();
@@ -185,13 +188,16 @@ void loop() {
     }
   }
 }
+// ------------------------ ОСНОВНОЙ ЦИКЛ ------------------------
 
 
-// Форма входа
+// ------------------------ ПОЛЬЗОВАТЕЛЬСКИЙ ИНТЕРФЕЙС -----------
+// DrawMainForm - отрисовка формы входа
 void DrawMainForm(){
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(F("Доступ: "));
+
   if (isAccessAllowed){
     lcd.print(F("разрешен"));
     lcd.setCursor(0, 1);
@@ -205,29 +211,7 @@ void DrawMainForm(){
   return;
 }
 
-// Меню>Доб.Польз.
-//    Ввод пина: 
-//    A-да, D-нет
-//    Ввод Отпеч.: 
-//    A-да, D-нет
-//    Созд. токен: 
-//    A-да, D-нет
-// 
-// Меню>Ред.Польз.
-//    Меню>Ред.Польз.
-//    Пользователь: N
-//        Меню>Ред.Польз.>
-//        N > Код
-//        Меню>Ред.Польз.>
-//        N > Палец
-//        Меню>Ред.Польз.>
-//        N > Токен
-// 
-// Меню>Удал.Польз.
-//    Меню>Удал.Польз.
-//    Пользователь: N
-// 
-// Главное меню настроек
+// DrawMenu - отрисовка главного меню
 void DrawMenu(){
   int8_t ind = 0;
   lcd.clear();
@@ -290,7 +274,7 @@ void DrawMenu(){
   }
 }
 
-// Подменю удаления пользователя
+// DrawDeleteUserMenu - отрисовка подменю удаления пользователя
 void DrawDeleteUserMenu(){
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -352,7 +336,7 @@ void DrawDeleteUserMenu(){
 }
 
 
-// Добавление нового пользователя в систему
+// DrawAddUserMenu - отрисовка добавления нового пользователя в систему
 void DrawAddUserMenu(){
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -483,7 +467,7 @@ void DrawAddUserMenu(){
   return;
 }
 
-// Подменю обновления режима входа
+// DrawUpdateModeMenu - отрисовка подменю обновления режима входа
 void DrawUpdateModeMenu(const __FlashStringHelper* firstString){
   int8_t ind = 0;
   lcd.clear();
@@ -562,9 +546,13 @@ void DrawUpdateModeMenu(const __FlashStringHelper* firstString){
     }
   } 
 }
-// ==========================================================================================================================================================
 
-// Проверка пин-кода
+// ------------------------ ПОЛЬЗОВАТЕЛЬСКИЙ ИНТЕРФЕЙС -----------
+
+
+
+// ------------------------ АУТЕНТИФИКАЦИЯ ------------------------
+// PinCheck - проверка пин-кода
 bool PinCheck(bool ids[]){
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -607,7 +595,7 @@ bool PinCheck(bool ids[]){
   return false;
 }
 
-// Проверка отпечатока
+// FingerCheck - проверка отпечатка
 bool FingerCheck(bool* ids, bool needCheckId){
   finger.LEDcontrol(true);
   int8_t code = getFingerprintID();
@@ -687,7 +675,7 @@ bool FingerCheck(bool* ids, bool needCheckId){
   }
 }
 
-// Проверка токена
+// TokenCheck - проверка токена
 bool TokenCheck(bool* ids, bool needCheckId){
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -736,7 +724,7 @@ bool TokenCheck(bool* ids, bool needCheckId){
   return false;
 }
 
-// Проверка пин-кода и отпечатока
+// PinAndFingerCheck - проверка пин-кода и отпечатка
 bool PinAndFingerCheck(bool* ids){
   if (PinCheck(ids)){
     if (FingerCheck(ids, true)){
@@ -747,7 +735,7 @@ bool PinAndFingerCheck(bool* ids){
   return false;
 }
 
-// Проверка пин-кода и токена
+// PinAndTokenCheck- проверка пин-кода и токена
 bool PinAndTokenCheck(bool* ids){
   if (PinCheck(ids)){
     if (TokenCheck(ids, true)){
@@ -758,7 +746,7 @@ bool PinAndTokenCheck(bool* ids){
   return false;
 }
 
-// Проверка отпечатка и токена
+// FingerAndTokenCheck - проверка отпечатка и токена
 bool FingerAndTokenCheck(bool* ids){
   if (FingerCheck(ids, false)){
     if (TokenCheck(ids, true)){
@@ -769,7 +757,7 @@ bool FingerAndTokenCheck(bool* ids){
   return false;
 }
 
-// Проверка пин-кода, отпечатока и токена
+// PinFingerAndTokenCheck - проверка пин-кода, отпечатока и токена
 bool PinFingerAndTokenCheck(bool* ids){
   if (PinCheck(ids)){
     if (FingerCheck(ids, true)){
@@ -781,10 +769,11 @@ bool PinFingerAndTokenCheck(bool* ids){
 
   return false;
 }
+// ------------------------ АУТЕНТИФИКАЦИЯ ------------------------
 
 
-// ==========================================================================================================================================================
-// Сохранить отпечаток
+// ------------------------ ОТПЕЧАТОК ПАЛЬЦА ----------------------
+// SaveFingerprint - сохранить отпечаток
 int8_t SaveFingerprint(uint8_t id){
   finger.LEDcontrol(true);
   int8_t code = getFingerprintEnroll(id);
@@ -824,7 +813,7 @@ int8_t SaveFingerprint(uint8_t id){
   return code;
 }
 
-// Удалить отпечаток из датчика
+// DeleteFingerprintByID - удалить отпечаток из датчика
 int8_t DeleteFingerprintByID(int8_t id) {
   uint8_t p = -1;
 
@@ -856,7 +845,7 @@ int8_t DeleteFingerprintByID(int8_t id) {
   }
 }
 
-// Получить ID по отпечатку пальца
+// getFingerprintID - получить ID по отпечатку пальца
 // returns -1 if failed, otherwise returns ID #
 int8_t getFingerprintID() {
   lcd.clear();
@@ -898,7 +887,7 @@ int8_t getFingerprintID() {
   return finger.fingerID;
 }
 
-// Запомнить отпечаток пальца
+// getFingerprintEnroll - запомнить отпечаток пальца
 int8_t getFingerprintEnroll(uint8_t id) {
   int p = -1;
   uint8_t position = 0;
@@ -1011,12 +1000,11 @@ int8_t getFingerprintEnroll(uint8_t id) {
 
   return OK_CODE;
 }
-// ==========================================================================================================================================================
+// ------------------------ ОТПЕЧАТОК ПАЛЬЦА ----------------------
 
 
-
-// ==========================================================================================================================================================
-// Проверка пин-кода и вывод всей информации на дисплей.
+// ------------------------ PIN КОД -------------------------------
+// GetPin - проверка пин-кода и вывод всей информации на дисплей.
 // Получить пин-код
 int8_t GetPin(int offsetX, int offsetY, char* pin){
   char inputChar;
@@ -1040,7 +1028,7 @@ int8_t GetPin(int offsetX, int offsetY, char* pin){
   return OK_CODE;
 }
 
-// Ввод пин-кода и сравнение его с пин-кодом в памяти
+// EnterPinWithCheckUsers - ввод пин-кода и сравнение его с пин-кодом в памяти
 int8_t EnterPinWithCheckUsers(bool* ids){
   char pin[MAX_PIN_SIZE];
   int code = GetPin(5, 0, pin);
@@ -1073,12 +1061,8 @@ int8_t EnterPinWithCheckUsers(bool* ids){
 
   return result;
 }
-// ==========================================================================================================================================================
 
-
-
-// ==========================================================================================================================================================
-// Проверка токена и вывод всей информации на дисплей.
+// GetSecret - проверка токена и вывод всей информации на дисплей.
 int8_t GetSecret(int offsetX, int offsetY, char* token){
   char inputChar;
   for (uint8_t i=0; i<MAX_SIZE_HOTP_TOKEN; i++){
@@ -1101,7 +1085,7 @@ int8_t GetSecret(int offsetX, int offsetY, char* token){
   return OK_CODE;
 }
 
-// Ввод токена и сравнение его с паролем в памяти
+// EnterTokenWithCheckUsers - ввод токена и сравнение его с паролем в памяти
 int8_t EnterTokenWithCheckUsers(bool* ids, int seed, bool needCheckId){
   char token[MAX_SIZE_HOTP_TOKEN];
   int code = GetSecret(7, 1, token);
@@ -1139,13 +1123,11 @@ int8_t EnterTokenWithCheckUsers(bool* ids, int seed, bool needCheckId){
 
   return result;
 }
-
-// ==========================================================================================================================================================
-
+// ------------------------ PIN КОД -------------------------------
 
 
-// ==========================================================================================================================================================
-// Получить пользователя из памяти по ID
+// ------------------------ УЧЕТНЫЕ ЗАПИСИ ------------------------
+// GetUserByID - получить пользователя из памяти по ID
 User GetUserByID(int8_t id){
   if (id >= MAX_USER_COUNT){
     return User{"-", "-", false};
@@ -1160,7 +1142,7 @@ User GetUserByID(int8_t id){
   return user;
 }
 
-// Получить все доступные позиции для добавления пользователя в список пользователей.
+// GetAllUsers - получить все доступные позиции для добавления пользователя в список пользователей.
 void GetAllUsers(User* users){
   for (int id=0; id<MAX_USER_COUNT; id++){
     users[id] = GetUserByID(id);
@@ -1168,7 +1150,7 @@ void GetAllUsers(User* users){
   return users;
 }
 
-// Получить следующего свободного пользователя
+// GetNextEmptyUserPosition - получить следующего свободного пользователя
 int GetNextEmptyUserPosition(User* users, int8_t index){
   index++;
   if (!users[index % MAX_USER_COUNT].isExists) return index % MAX_USER_COUNT;
@@ -1184,7 +1166,7 @@ int GetNextEmptyUserPosition(User* users, int8_t index){
   return -1;
 }
 
-// Получить следующего свободного пользователя
+// GetPrevEmptyUserPosition - получить следующего свободного пользователя
 int GetPrevEmptyUserPosition(User* users, int8_t index){
   if (--index < 0) index = MAX_USER_COUNT-1;
   if (!users[index].isExists) return index;
@@ -1200,8 +1182,7 @@ int GetPrevEmptyUserPosition(User* users, int8_t index){
   return -1;
 }
 
-
-// Получить следующего существующего пользователя
+// GetNextExistsUserPosition - получить следующего существующего пользователя
 int GetNextExistsUserPosition(User* users, int8_t index){
   index++;
   if (users[index % MAX_USER_COUNT].isExists) return index % MAX_USER_COUNT;
@@ -1217,7 +1198,7 @@ int GetNextExistsUserPosition(User* users, int8_t index){
   return -1;
 }
 
-// Получить следующего существующего пользователя
+// GetPrevExistsUserPosition - получить следующего существующего пользователя
 int GetPrevExistsUserPosition(User* users, int8_t index){
   if (--index < 0) index = MAX_USER_COUNT-1;
   if (users[index].isExists) return index;
@@ -1233,39 +1214,37 @@ int GetPrevExistsUserPosition(User* users, int8_t index){
   return -1;
 }
 
-// Записать пользователя в память
+// SaveUser - записать пользователя в память
 void SaveUser(int8_t id, User user){
   EEPROM.put(id*sizeof(User), user);
   return;
 }
 
-// Стереть пользователя из памяти
+// DeleteUser - стереть пользователя из памяти
 void DeleteUser(int8_t id){
   EEPROM.put(id*sizeof(User), User{"-", "-", false});
   return;
 }
-// ==========================================================================================================================================================
+// ------------------------ УЧЕТНЫЕ ЗАПИСИ ------------------------
 
 
-
-// ==========================================================================================================================================================
-// Получить текущий режим входа
+// ------------------------ РЕЖИМ ВХОДА ------------------------
+// GetCurrentMode - получить текущий режим входа
 uint8_t GetCurrentMode(){
   uint8_t mode;
   EEPROM.get(MODE_POS, mode);
   return mode;
 }
 
-// Сохранить текущий режим входа
+// SaveCurrentMode - сохранить текущий режим входа
 void SaveCurrentMode(uint8_t mode){
   EEPROM.put(MODE_POS, mode);
 }
-// ==========================================================================================================================================================
+// ------------------------ РЕЖИМ ВХОДА ------------------------
 
 
-
-// ==========================================================================================================================================================
-// Функция для генерации HOTP
+// ------------------------ HOTP ------------------------
+// generateHOTP -  генерация HOTP
 long generateHOTP(const String key, unsigned long counter, int digits) {
   byte hmac_key[key.length()+1];
   key.getBytes(hmac_key, sizeof(hmac_key));
@@ -1308,6 +1287,7 @@ long generateHOTP(const String key, unsigned long counter, int digits) {
   return binary % (long) pow(10, digits);
 }
 
+// generateRandomSecret - генерация секрета
 String generateRandomSecret() {
   // Символы, из которых будет состоять токен
   
@@ -1323,3 +1303,4 @@ String generateRandomSecret() {
   
   return token;
 }
+// ------------------------ HOTP ------------------------
